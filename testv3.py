@@ -178,7 +178,7 @@ if __name__ == '__main__':
     calibration_data = {}
     for config in camera_configs:
         idx = config['index']
-        with open(f'calibration_data_camera{idx}.pkl', 'rb') as f:
+        with open(f'./params/calibration_data_camera{idx}.pkl', 'rb') as f:
             data = pickle.load(f)
             calibration_data[idx] = data  # 'K', 'D', 'extrinsic_matrix' ??
 

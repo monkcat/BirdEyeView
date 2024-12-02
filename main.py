@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 from multiprocessing import Process, Queue, Lock
 import time
+import socket
 
 def undistort_image(image, calibration_data):
     K = calibration_data['K']
@@ -102,7 +103,7 @@ def process_camera(idx, device, calibration_data, roi, point, lut, frame_queue, 
         roi_image = crop_polygon(bev_image, roi)
         if (imwrite):
             cv2.imwrite(f'./image/roi_image{idx}.jpg',roi_image)
-        distance = calculate_pixel_distance(roi_image, point, imwrite = imwrite)
+        distance = calculate_pixel_distance(roi_image, roi,  point,idx, imwrite = imwrite)
 
         # Send the result back to the main process
         with lock:
@@ -116,31 +117,74 @@ def crop_polygon(image, points):
     x, y, w, h = cv2.boundingRect(hull)
     return cropped_image[y:y+h, x:x+w]
 
-def calculate_pixel_distance(image, point, imwrite = False):
+def calculate_pixel_distance(image,roi_points, base_point, idx,imwrite = False):
+    
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
+    blur = cv2.GaussianBlur(gray, (3, 3), sigmaX = 0, sigmaY = 0)
+
+    edges = cv2.Canny(blur, 100, 200)
+    
     if (imwrite):
         cv2.imwrite(f'./image/edge{idx}.jpg', edges)
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=100, maxLineGap=10)
-    if lines is not None:
-        max_length = 0
-        thickest_line = None
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            length = np.hypot(x2 - x1, y2 - y1)
-            if length > max_length:
-                max_length = length
-                thickest_line = (x1, y1, x2, y2)
-        x0, y0 = point
-        x1, y1, x2, y2 = thickest_line
-        A = y2 - y1
-        B = x1 - x2
-        C = x2 * y1 - x1 * y2
-        return abs(A * x0 + B * y0 + C) / np.hypot(A, B)
-    return None
+
+    if idx == 0:
+        input_line = (285,378,164,360)
+    elif idx == 1:
+        input_line = (30,204,349,231)
+    elif idx == 2:
+        input_line = (26,368,673,332)
+    else:
+        input_line = (1,249,271,275)
+
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    roi_polygon = np.array(roi_points, dtype=np.int32)
+    cv2.fillPoly(mask, [roi_polygon], 255)
+
+    edges_in_roi = cv2.bitwise_and(edges, edges, mask=mask)
+
+    lines = cv2.HoughLinesP(edges, 1, np.pi /180 , threshold=70,minLineLength=10, maxLineGap=10)  
+
+    if lines is None:
+        print("No lines detected.")
+        return 10000
+    
+    intersections = []
+    x1, y1, x2, y2 = input_line
+    for line in lines:
+        x3, y3, x4, y4 = line[0]
+
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if denom == 0:  # ??? ??
+            continue
+
+        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+
+        if cv2.pointPolygonTest(roi_polygon, (px, py), False) >= 0:
+            intersections.append((px, py))
+
+    if not intersections:
+        # print("No intersections found within ROI.")
+        return 10000
+
+    min_distance = float("inf")
+    bx, by = base_point
+    for px, py in intersections:
+        distance = np.hypot(px - bx, py - by)
+        if distance < min_distance:
+            min_distance = distance
+
+    return min_distance 
 
 if __name__ == '__main__':
+    host = '192.168.10.10'
+    port = 12345
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((host, port))
+
     # Camera configurations
+    '''
     camera_configs = [
         {'index': 0, 'device': '/dev/video0',
          'world_x_min': -0.0, 'world_x_max': 0.3,
@@ -164,16 +208,50 @@ if __name__ == '__main__':
     ]
 
     roi_config = [
-        [(135, 43), (370, 194), (324, 486), (48, 598)],
-        [(97, 125), (47, 505), (450, 86), (344, 592)],
-        [(111, 598), (111, 874), (536, 294), (554, 1122)],
-        [(203, 258), (203, 506), (491, 116), (463, 685)]
+        [(522, 774), (522, 469), (172, 246), (181, 929)],
+        [(67, 137), (44, 496), (426, 4), (322, 593)],
+        [(109, 575), (119, 875), (774, 865), (771, 544)],
+        [(201, 259), (793, 249), (203, 507), (793, 531)]
     ]
-    roi_config = list(np.array(roi_config) // 2)
-    print(roi_config)
+    '''
+    
+    #roi_config = list(np.array(roi_config) // 2)
+    #print(roi_config)
 
-    distance_point = [(296, 306), (25, 247), (15, 15), (15, 15)]
-    distance_point = list(np.array(distance_point) // 2)
+    #distance_point = [(296, 306), (25, 247), (15, 15), (15, 15)]
+    #distance_point = list(np.array(distance_point) // 2)
+    
+    camera_configs = [
+        {'index': 0, 'device': '/dev/video0',
+         'world_x_min': -0.1, 'world_x_max': 0.3,
+         'world_y_min': -0.3, 'world_y_max': 0.3,
+         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+    
+        {'index': 1, 'device': '/dev/video4',
+         'world_x_min': -0.10, 'world_x_max': 0.2,
+         'world_y_min': -0.15, 'world_y_max': 0.15,
+         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+        
+        {'index': 2, 'device': '/dev/video8',
+         'world_x_min': -0.1, 'world_x_max': 0.3,
+         'world_y_min': -0.35, 'world_y_max': 0.35,
+         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+        
+        {'index': 3, 'device': '/dev/video25',
+         'world_x_min': -0.15, 'world_x_max': 0.25,
+         'world_y_min':-0.15, 'world_y_max': 0.3,
+         'world_x_interval': 0.0005, 'world_y_interval': 0.0005}
+    ]
+    
+    roi_config = [
+        [(522, 774), (522, 469),  (172, 246), (181, 929)],
+        [(67, 137), (44, 496), (426, 4), (322, 593)],
+        [(109, 575), (119, 875), (774, 865), (771, 544)],
+        [(201, 259), (793, 249), (203, 507), (793, 531)]
+        ]
+    
+
+    distance_point = [(285,378), (30,204), (26,368), (1,249)]
 
     # Load calibration data
     calibration_data = {}
@@ -213,9 +291,11 @@ if __name__ == '__main__':
 
     try:
         while True:
+           # time.sleep(1)
             # Measure time for each iteration
             start_time = time.time()
             results = {}
+            radar_value = []
 
             # Collect results from all cameras
             for _ in range(len(camera_configs)):
@@ -230,6 +310,13 @@ if __name__ == '__main__':
             for idx in sorted(results.keys()):
                 if len(results) == 4:
                     print(f"Camera {idx}: Distance = {results[idx]}")
+                    radar_value.append(results[idx])
+            
+            if (radar_value):
+                try:
+                    s.sendall(','.join(map(str, radar_value)).encode())
+                except KeyboardInterrupt:
+                    print("Stopped by User")
 
             # Measure and print elapsed time
             elapsed_time = time.time() - start_time

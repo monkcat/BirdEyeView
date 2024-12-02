@@ -2,7 +2,7 @@ import pickle
 import numpy as np
 
 # Load existing calibration data
-filename = 'calibration_data_camera3_2.pkl'
+filename = './params/calibration_data_camera3_2.pkl'
 
 with open(filename, 'rb') as f:
     calibration_data = pickle.load(f)

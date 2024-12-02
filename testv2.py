@@ -78,13 +78,13 @@ def crop_polygon(image, points, angle = 0):
     rotated_image = cv2.warpAffine(cropped_image, rotation_matrix, (w, h), flags=cv2.INTER_LINEAR)
 
     return rotated_image
-
+'''
 def calculate_pixel_distance(image, point, idx,low_threshold=50, high_threshold=100,
                              min_line_length=10, max_line_gap=10):
     
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, low_threshold, high_threshold)
-    cv2.imwrite(f'edge{idx}.jpg', edges)
+    cv2.imwrite(f'./image/edge{idx}.jpg', edges)
 
     # Step 2: Hough Line Transform?? ?? ??
     lines = cv2.HoughLinesP(edges, 1, np.pi / 360, threshold=10,
@@ -116,7 +116,71 @@ def calculate_pixel_distance(image, point, idx,low_threshold=50, high_threshold=
         return distance
     else:
         print("No lines detected.")
-        return None, None    
+        return None, None 
+'''
+
+def calculate_pixel_distance(image,roi_points, base_point, idx,low_threshold=50, high_threshold=100,
+                             min_line_length=10, max_line_gap=10):
+    if idx == 0:
+        input_line = (285,378,164,360)
+    elif idx == 1:
+        input_line = (30,204,349,231)
+    elif idx == 2:
+        input_line = (26,368,673,332)
+    else:
+        input_line = (1,249,271,275)
+
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    roi_polygon = np.array(roi_points, dtype=np.int32)
+    cv2.fillPoly(mask, [roi_polygon], 255)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+
+    edges_in_roi = cv2.bitwise_and(edges, edges, mask=mask)
+
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, low_threshold, high_threshold)
+    cv2.imwrite(f'./image/edge{idx}.jpg', edges)
+
+    # Step 2: Hough Line Transform?? ?? ??
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 360, threshold=10,
+                            minLineLength=min_line_length, maxLineGap=max_line_gap)     
+
+    # Step 5: ??? ??? ROI ? ?? ?? ?? ??
+    intersections = []
+    x1, y1, x2, y2 = input_line
+    for line in lines:
+        x3, y3, x4, y4 = line[0]
+
+        # ?? ? ?? ??
+        denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+        if denom == 0:  # ??? ??
+            continue
+
+        px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denom
+        py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denom
+
+        # ??? ROI ??? ??? ??
+        if cv2.pointPolygonTest(roi_polygon, (px, py), False) >= 0:
+            intersections.append((px, py))
+
+    if not intersections:
+        print("No intersections found within ROI.")
+        return None
+
+    # Step 6: ?? ?? ??? ??? ?? ??
+    closest_point = None
+    min_distance = float("inf")
+    bx, by = base_point
+    for px, py in intersections:
+        distance = np.hypot(px - bx, py - by)
+        if distance < min_distance:
+            min_distance = distance
+            closest_point = (px, py)
+
+    return min_distance 
 
 def process_camera(idx, device, calibration_data, bev_results, lock, config, roi, point):
     # 1. ??? ??
@@ -136,7 +200,7 @@ def process_camera(idx, device, calibration_data, bev_results, lock, config, roi
 
     # 2. ??? ?? ??
     undistorted_img = undistort_image(img, calibration_data)
-    cv2.imwrite(f'undistorted_image{idx}.jpg', undistorted_img)
+    cv2.imwrite(f'./image/undistorted_image{idx}.jpg', undistorted_img)
 
 
     # 3. LUT ?? (?? ??? ??? ? ???? ?? ??)
@@ -154,10 +218,10 @@ def process_camera(idx, device, calibration_data, bev_results, lock, config, roi
 
     # 4. BEV ??? ??
     bev_image = generate_bev_image(undistorted_img, map_x, map_y)
-    cv2.imwrite(f'bev_image{idx}.jpg', bev_image)
+    cv2.imwrite(f'./image/bev_image{idx}.jpg', bev_image)
     roi_image = crop_polygon(bev_image, roi)
-    cv2.imwrite(f'roi_image{idx}.jpg',roi_image)
-    distance = calculate_pixel_distance(roi_image, point, idx=idx)
+    cv2.imwrite(f'./image/roi_image{idx}.jpg',roi_image)
+    distance = calculate_pixel_distance(roi_image,roi, point, idx=idx)
 
     # ?? ??
     with lock:
@@ -190,20 +254,20 @@ if __name__ == '__main__':
     ]
     
     roi_config = [
-        [(135, 43), (370, 194),  (324, 486), (48, 598),],
-        [(97, 125), (47, 505), (450, 86), (344, 592)],
-        [(107, 681), (107, 784), (795, 695), (795, 800)],
-        [(203, 258), (203, 506), (491, 116), (463, 685)]
+        [(522, 774), (522, 469),  (172, 246), (181, 929)],
+        [(67, 137), (44, 496), (426, 4), (322, 593)],
+        [(109, 575), (119, 875), (774, 865), (771, 544)],
+        [(201, 259), (793, 249), (203, 507), (793, 531)]
         ]
     
 
-    distance_point = [(296,306), (25,247), (6,40), (15,15)]
+    distance_point = [(285,378), (30,204), (26,368), (1,249)]
 
     # ?????? ??? ??
     calibration_data = {}
     for config in camera_configs:
         idx = config['index']
-        with open(f'calibration_data_camera{idx}_2.pkl', 'rb') as f:
+        with open(f'./params/calibration_data_camera{idx}_2.pkl', 'rb') as f:
             data = pickle.load(f)
             calibration_data[idx] = data  # 'K', 'D', 'extrinsic_matrix' ??
 
