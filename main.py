@@ -74,6 +74,8 @@ def crop_polygon(image, points, angle=0):
         return cropped_image
 
 def process_camera(idx, device, calibration_data, roi, point, lut, frame_queue, result_queue, lock, imwrite = False):
+
+    time.sleep(0.05)
     cap = cv2.VideoCapture(device)
 
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -128,13 +130,13 @@ def calculate_pixel_distance(image,roi_points, base_point, idx,imwrite = False):
         cv2.imwrite(f'./image/edge{idx}.jpg', edges)
 
     if idx == 0:
-        input_line = (285,378,164,360)
+        input_line = (7,305,348,376)
     elif idx == 1:
-        input_line = (30,204,349,231)
+        input_line = (15,280,327,312)
     elif idx == 2:
-        input_line = (26,368,673,332)
+        input_line = (7,178,661,167)
     else:
-        input_line = (1,249,271,275)
+        input_line = (2,140,585,146)
 
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     roi_polygon = np.array(roi_points, dtype=np.int32)
@@ -165,7 +167,7 @@ def calculate_pixel_distance(image,roi_points, base_point, idx,imwrite = False):
 
     if not intersections:
         # print("No intersections found within ROI.")
-        return 10000
+        return 2000
 
     min_distance = float("inf")
     bx, by = base_point
@@ -291,7 +293,7 @@ if __name__ == '__main__':
 
     try:
         while True:
-           # time.sleep(1)
+            #time.sleep(0.05)
             # Measure time for each iteration
             start_time = time.time()
             results = {}
@@ -319,8 +321,8 @@ if __name__ == '__main__':
                     print("Stopped by User")
 
             # Measure and print elapsed time
-            elapsed_time = time.time() - start_time
-            print(f"Iteration time: {elapsed_time:.4f} seconds")
+           # elapsed_time = time.time() - start_time
+            #print(f"Iteration time: {elapsed_time:.4f} seconds")
 
     except KeyboardInterrupt:
         print("Stopping processes...")

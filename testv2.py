@@ -119,16 +119,18 @@ def calculate_pixel_distance(image, point, idx,low_threshold=50, high_threshold=
         return None, None 
 '''
 
+
+
 def calculate_pixel_distance(image,roi_points, base_point, idx,low_threshold=50, high_threshold=100,
                              min_line_length=10, max_line_gap=10):
     if idx == 0:
-        input_line = (285,378,164,360)
+        input_line = (7, 305, 348, 376)
     elif idx == 1:
-        input_line = (30,204,349,231)
+        input_line = (15, 280, 327, 312)
     elif idx == 2:
-        input_line = (26,368,673,332)
+        input_line = (7, 178, 661, 167)
     else:
-        input_line = (1,249,271,275)
+        input_line = (2, 140, 585, 146)
 
     mask = np.zeros(image.shape[:2], dtype=np.uint8)
     roi_polygon = np.array(roi_points, dtype=np.int32)
@@ -181,6 +183,120 @@ def calculate_pixel_distance(image,roi_points, base_point, idx,low_threshold=50,
             closest_point = (px, py)
 
     return min_distance 
+
+
+'''
+def calculate_pixel_distance(image, roi_points, base_point, idx, imwrite=False):
+    # 원본 이미지를 복사하여 그림을 그릴 수 있도록 합니다.
+    output_image = image.copy()
+
+    # 1. 그레이스케일 변환
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # 2. 가우시안 블러 적용
+    blur = cv2.GaussianBlur(gray, (3, 3), sigmaX=0, sigmaY=0)
+
+    # 3. Canny 엣지 검출
+    edges = cv2.Canny(blur, 100, 200)
+
+    # 디버깅을 위한 엣지 이미지 저장
+    if imwrite:
+        cv2.imwrite(f'./image/edge{idx}.jpg', edges)
+
+    # 4. 입력 선 설정 (각 카메라 인덱스에 따라 다름)
+    if idx == 0:
+        input_line = (7, 305, 348, 376)
+    elif idx == 1:
+        input_line = (15, 280, 327, 312)
+    elif idx == 2:
+        input_line = (7, 178, 661, 167)
+    else:
+        input_line = (2, 140, 585, 146)
+
+    # 입력 선을 이미지에 그림
+    cv2.line(output_image, (input_line[0], input_line[1]), (input_line[2], input_line[3]), (0, 255, 0), 2)
+
+    # 5. ROI 마스크 생성
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+    roi_polygon = np.array(roi_points, dtype=np.int32)
+    cv2.fillPoly(mask, [roi_polygon], 255)
+
+    # 6. ROI 내의 엣지만 남기기
+    edges_in_roi = cv2.bitwise_and(edges, edges, mask=mask)
+
+    # 7. Hough 선 변환을 사용하여 선 검출 (cv2.HoughLines 사용)
+    lines = cv2.HoughLines(edges_in_roi, rho=1, theta=np.pi / 180, threshold=15)
+
+    if lines is None:
+        # 선이 검출되지 않은 경우 큰 값 반환
+        print("No lines detected.")
+        return 10000
+
+    # 검출된 선들을 이미지에 그림
+    for line in lines:
+        rho, theta = line[0]
+        a = np.cos(theta)
+        b = np.sin(theta)
+        x0 = a * rho
+        y0 = b * rho
+        # 이미지 크기에 따라 충분히 긴 선분으로 표시
+        x1 = int(x0 + 1000 * (-b))
+        y1 = int(y0 + 1000 * (a))
+        x2 = int(x0 - 1000 * (-b))
+        y2 = int(y0 - 1000 * (a))
+        cv2.line(output_image, (x1, y1), (x2, y2), (0, 0, 255), 1)
+
+    # 8. 입력 선을 rho-theta 형태로 변환
+    x1, y1, x2, y2 = input_line
+    dx = x2 - x1
+    dy = y2 - y1
+    theta_input = np.arctan2(dy, dx)
+    rho_input = x1 * np.cos(theta_input) + y1 * np.sin(theta_input)
+
+    # 9. 검출된 선들과 입력 선의 교점 계산
+    intersections = []
+    for line in lines:
+        rho, theta = line[0]
+
+        # 두 직선의 교점 계산
+        sin_theta = np.sin(theta)
+        cos_theta = np.cos(theta)
+        sin_theta_input = np.sin(theta_input)
+        cos_theta_input = np.cos(theta_input)
+
+        denom = cos_theta_input * sin_theta - sin_theta_input * cos_theta
+        if denom == 0:
+            # 평행한 선
+            continue
+
+        x = (sin_theta * rho_input - sin_theta_input * rho) / denom
+        y = (cos_theta_input * rho - cos_theta * rho_input) / denom
+
+        # 교점이 ROI 내부에 있는지 확인
+        if cv2.pointPolygonTest(roi_polygon, (x, y), False) >= 0:
+            intersections.append((x, y))
+            # 교점을 이미지에 그림
+            cv2.circle(output_image, (int(x), int(y)), 5, (255, 0, 0), -1)
+
+    if not intersections:
+        # 교점이 없는 경우 큰 값 반환
+        # print("No intersections found within ROI.")
+        return 10000
+
+    # 10. 기준 점(base_point)과 교점들 간의 최소 거리 계산
+    min_distance = float("inf")
+    bx, by = base_point
+    for px, py in intersections:
+        distance = np.hypot(px - bx, py - by)
+        if distance < min_distance:
+            min_distance = distance
+
+    # if imwrite:
+    cv2.imwrite(f'./image/output_image_{idx}_test.jpg', output_image)
+
+    return min_distance
+'''
+    
 
 def process_camera(idx, device, calibration_data, bev_results, lock, config, roi, point):
     # 1. ??? ??
