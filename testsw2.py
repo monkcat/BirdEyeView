@@ -72,44 +72,7 @@ def crop_polygon(image, points, angle=0):
     else:
         return cropped_image
 
-def calculate_pixel_distance(image, point, low_threshold=50, high_threshold=150,
-                             min_line_length=100, max_line_gap=10):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, low_threshold, high_threshold)
-
-    # Hough Line Transform? ?? ? ??
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50,
-                            minLineLength=min_line_length, maxLineGap=max_line_gap)
-
-    if lines is not None:
-        # ?? ? ? ??
-        max_length = 0
-        thickest_line = None
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
-            length = np.hypot(x2 - x1, y2 - y1)
-            if length > max_length:
-                max_length = length
-                thickest_line = (x1, y1, x2, y2)
-
-        # ?? ? ??? ?? ??
-        x0, y0 = point
-        x1, y1, x2, y2 = thickest_line
-
-        # ?? ??? ?? (Ax + By + C = 0)
-        A = y2 - y1
-        B = x1 - x2
-        C = x2 * y1 - x1 * y2
-
-        # ?? ? ??? ?? ?? (??? ?)
-        distance = abs(A * x0 + B * y0 + C) / np.hypot(A, B)
-
-        return distance
-    else:
-        # ?? ???? ?? ?? None ??
-        return None
-
-def process_camera(idx, device, calibration_data, roi, point, lut, frame_queue, result_queue, lock):
+def process_camera(idx, device, calibration_data, roi, point, lut, frame_queue, result_queue, lock, imwrite = False):
     cap = cv2.VideoCapture(device)
 
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -132,10 +95,14 @@ def process_camera(idx, device, calibration_data, roi, point, lut, frame_queue, 
         # Bird?s Eye View transformation
         map_x, map_y = lut
         bev_image = cv2.remap(undistort_img, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+        if (imwrite):
+            cv2.imwrite(f'bev_image{idx}.jpg', bev_image)
 
         # Crop ROI and calculate distance
         roi_image = crop_polygon(bev_image, roi)
-        distance = calculate_pixel_distance(roi_image, point)
+        if (imwrite):
+            cv2.imwrite(f'roi_image{idx}.jpg',roi_image)
+        distance = calculate_pixel_distance(roi_image, point, imwrite = imwrite)
 
         # Send the result back to the main process
         with lock:
@@ -149,9 +116,11 @@ def crop_polygon(image, points):
     x, y, w, h = cv2.boundingRect(hull)
     return cropped_image[y:y+h, x:x+w]
 
-def calculate_pixel_distance(image, point):
+def calculate_pixel_distance(image, point, imwrite = False):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 50, 150)
+    if (imwrite):
+        cv2.imwrite(f'edge{idx}.jpg', edges)
     lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50, minLineLength=100, maxLineGap=10)
     if lines is not None:
         max_length = 0
@@ -176,22 +145,22 @@ if __name__ == '__main__':
         {'index': 0, 'device': '/dev/video0',
          'world_x_min': -0.0, 'world_x_max': 0.3,
          'world_y_min': -0.15, 'world_y_max': 0.15,
-         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+         'world_x_interval': 0.001, 'world_y_interval': 0.001},
 
         {'index': 1, 'device': '/dev/video4',
          'world_x_min': -0.10, 'world_x_max': 0.2,
          'world_y_min': -0.15, 'world_y_max': 0.15,
-         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+         'world_x_interval': 0.001, 'world_y_interval': 0.001},
 
         {'index': 2, 'device': '/dev/video8',
          'world_x_min': -0.1, 'world_x_max': 0.3,
          'world_y_min': -0.35, 'world_y_max': 0.35,
-         'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
+         'world_x_interval': 0.001, 'world_y_interval': 0.001},
 
         {'index': 3, 'device': '/dev/video25',
          'world_x_min': -0.15, 'world_x_max': 0.25,
          'world_y_min': -0.15, 'world_y_max': 0.3,
-         'world_x_interval': 0.0005, 'world_y_interval': 0.0005}
+         'world_x_interval': 0.001, 'world_y_interval': 0.001}
     ]
 
     roi_config = [
@@ -200,15 +169,18 @@ if __name__ == '__main__':
         [(111, 598), (111, 874), (536, 294), (554, 1122)],
         [(203, 258), (203, 506), (491, 116), (463, 685)]
     ]
+    roi_config = list(np.array(roi_config) // 2)
+    print(roi_config)
 
     distance_point = [(296, 306), (25, 247), (15, 15), (15, 15)]
+    distance_point = list(np.array(distance_point) // 2)
 
     # Load calibration data
     calibration_data = {}
     lut = {}
     for config in camera_configs:
         idx = config['index']
-        with open(f'calibration_data_camera{idx}.pkl', 'rb') as f:
+        with open(f'calibration_data_camera{idx}_2.pkl', 'rb') as f:
             calibration_data[idx] = pickle.load(f)
 
         # Generate LUT
@@ -226,6 +198,7 @@ if __name__ == '__main__':
 
     # Start camera processes
     processes = []
+    imwrite = True
     for config in camera_configs:
         idx = config['index']
         device = config['device']
@@ -233,7 +206,7 @@ if __name__ == '__main__':
         point = distance_point[idx]
         p = Process(target=process_camera, args=(
             idx, device, calibration_data[idx], roi, point, lut[idx],
-            frame_queue, result_queue, lock
+            frame_queue, result_queue, lock, imwrite
         ))
         processes.append(p)
         p.start()

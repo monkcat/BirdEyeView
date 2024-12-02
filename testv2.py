@@ -87,7 +87,7 @@ def calculate_pixel_distance(image, point, idx,low_threshold=50, high_threshold=
     cv2.imwrite(f'edge{idx}.jpg', edges)
 
     # Step 2: Hough Line Transform?? ?? ??
-    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=50,
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 360, threshold=10,
                             minLineLength=min_line_length, maxLineGap=max_line_gap)
 
     if lines is not None:
@@ -121,6 +121,10 @@ def calculate_pixel_distance(image, point, idx,low_threshold=50, high_threshold=
 def process_camera(idx, device, calibration_data, bev_results, lock, config, roi, point):
     # 1. ??? ??
     cap = cv2.VideoCapture(device)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FPS, 8)
     if not cap.isOpened():
         print(f"Cannot open camera {device}")
         return
@@ -132,6 +136,8 @@ def process_camera(idx, device, calibration_data, bev_results, lock, config, roi
 
     # 2. ??? ?? ??
     undistorted_img = undistort_image(img, calibration_data)
+    cv2.imwrite(f'undistorted_image{idx}.jpg', undistorted_img)
+
 
     # 3. LUT ?? (?? ??? ??? ? ???? ?? ??)
     world_x_min = config['world_x_min']
@@ -163,8 +169,8 @@ if __name__ == '__main__':
     # ??? ?? (? ???? ?? ??? ?? ??)
     camera_configs = [
         {'index': 0, 'device': '/dev/video0',
-         'world_x_min': -0.0, 'world_x_max': 0.3,
-         'world_y_min': -0.15, 'world_y_max': 0.15,
+         'world_x_min': -0.1, 'world_x_max': 0.3,
+         'world_y_min': -0.3, 'world_y_max': 0.3,
          'world_x_interval': 0.0005, 'world_y_interval': 0.0005},
     
         {'index': 1, 'device': '/dev/video4',
@@ -197,7 +203,7 @@ if __name__ == '__main__':
     calibration_data = {}
     for config in camera_configs:
         idx = config['index']
-        with open(f'calibration_data_camera{idx}.pkl', 'rb') as f:
+        with open(f'calibration_data_camera{idx}_2.pkl', 'rb') as f:
             data = pickle.load(f)
             calibration_data[idx] = data  # 'K', 'D', 'extrinsic_matrix' ??
 
